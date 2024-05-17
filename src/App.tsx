@@ -1,16 +1,47 @@
 import * as tf from "@tensorflow/tfjs";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 import "./App.css";
 
-const MOBILE_NET_INPUT_WITHD = 224;
+const MOBILE_NET_INPUT_WIDTH = 224;
 const MOBILE_NET_INPUT_HEIGHT = 224;
 
 function App() {
   const [tfLoaded, setTfLoaded] = useState(false);
   const [classNames, setClassNames] = useState(["0", "1"]);
   const [stopDataGather, setStopDataGather] = useState(-1);
+  const [gatherDataState, setGatherDataState] = useState("STOP_DATA_GATHER");
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [tainingDataInputs, setTrainingDataInputs] = useState([]);
+  const [tainingDataOutputs, setTrainingDataOutputs] = useState([]);
+  const [examplesCount, setExamplesCount] = useState([]);
+  const [predict, setPredict] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mobilenet = useRef<tf.GraphModel | null>(null);
+
+  useEffect(() => {
+    async function loadModel() {
+      try {
+        const model = await tf.loadGraphModel(
+          "https://www.kaggle.com/models/google/mobilenet-v3/TfJs/small-100-224-feature-vector/1",
+          { fromTFHub: true }
+        );
+        mobilenet.current = model;
+        setTfLoaded(true);
+        tf.tidy(() => {
+          const answer = model.predict(
+            tf.zeros([1, MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH, 3])
+          );
+          console.log(answer);
+        });
+      } catch (e) {
+        setTfLoaded(false);
+        console.log(e);
+      }
+    }
+
+    loadModel();
+  }, []);
 
   const enableCamHandler = () => {
     navigator.mediaDevices
@@ -19,10 +50,12 @@ function App() {
       })
       .then((stream) => {
         if (videoRef.current) {
+          setVideoPlaying(true);
           videoRef.current.srcObject = stream;
         }
       })
       .catch((err) => {
+        setVideoPlaying(false);
         console.log(err);
       });
   };
@@ -35,7 +68,7 @@ function App() {
 
   return (
     <>
-      <p>Awaiting TF.js</p>
+      {!tfLoaded && <p>Awaiting TF.js</p>}
       <video autoPlay />
       <button onClick={enableCamHandler}>Enable Webcam</button>
       <button
