@@ -1,5 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 import "./App.css";
 
@@ -10,15 +10,18 @@ function App() {
   const [tfLoaded, setTfLoaded] = useState(false);
   const [classNames, setClassNames] = useState(["0", "1"]);
   const [stopDataGather, setStopDataGather] = useState(-1);
-  const [gatherDataState, setGatherDataState] = useState("STOP_DATA_GATHER");
+  const [gatherDataState, setGatherDataState] = useState<string | number>(
+    "STOP_DATA_GATHER"
+  );
   const [videoPlaying, setVideoPlaying] = useState(false);
-  const [tainingDataInputs, setTrainingDataInputs] = useState([]);
-  const [tainingDataOutputs, setTrainingDataOutputs] = useState([]);
+  const [trainingDataInputs, setTrainingDataInputs] = useState([]);
+  const [trainingDataOutputs, setTrainingDataOutputs] = useState([]);
   const [examplesCount, setExamplesCount] = useState([]);
   const [predict, setPredict] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mobilenet = useRef<tf.GraphModel | null>(null);
   const modelHead = useRef<tf.Sequential | null>(null);
+  const requestAnimationFrame = useRef<number | null>(null);
 
   useEffect(() => {
     async function loadModel() {
@@ -75,7 +78,7 @@ function App() {
     }
 
     run();
-  }, []);
+  }, [classNames.length]);
 
   const enableCamHandler = () => {
     navigator.mediaDevices
@@ -98,26 +101,86 @@ function App() {
 
   const resetHandler = () => {};
 
-  const gatherDataHandler = (e: any) => {};
+  const dataGatherLoop = useCallback(() => {
+    if (videoPlaying && gatherDataState !== "STOP_DATA_GATHER") {
+      const imageFeature = tf.tidy(() => {
+        const videoFrameAsTensor = tf.browser.fromPixels(videoRef.current!);
+        const resizedTensorFrame = tf.image.resizeBilinear(
+          videoFrameAsTensor,
+          [MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH],
+          true
+        );
+        const normalizedTensorFrame = resizedTensorFrame.div(255);
+        return (
+          mobilenet
+            .current!.predict(normalizedTensorFrame.expandDims())
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error
+            .squeeze()
+        );
+      });
+
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      setTrainingDataInputs((prev) => [...prev, imageFeature]);
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      setTrainingDataOutputs((prev) => [...prev, gatherDataState]);
+
+      if (examplesCount[gatherDataState as number] === undefined) {
+        setExamplesCount((prev) => {
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          prev[gatherDataState] = 0;
+          return prev;
+        });
+      }
+
+      setExamplesCount((prev) => {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        prev[gatherDataState] = prev[gatherDataState] + 1;
+        return prev;
+      });
+    }
+
+    requestAnimationFrame.current =
+      window.requestAnimationFrame(dataGatherLoop);
+  }, [gatherDataState, videoPlaying, examplesCount]);
+
+  useEffect(() => {
+    if (typeof gatherDataState === "number") {
+      requestAnimationFrame.current =
+        window.requestAnimationFrame(dataGatherLoop);
+    } else {
+      window.cancelAnimationFrame(requestAnimationFrame.current!);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(requestAnimationFrame.current!);
+    };
+  }, [dataGatherLoop, gatherDataState]);
+
+  const gatherDataHandler = (cls: number) => {
+    setGatherDataState((prev) =>
+      prev === "STOP_DATA_GATHER" ? cls : "STOP_DATA_GATHER"
+    );
+  };
 
   return (
     <>
       {!tfLoaded && <p>Awaiting TF.js</p>}
-      <video autoPlay />
-      <button onClick={enableCamHandler}>Enable Webcam</button>
-      <button
-        data-hot="0"
-        onMouseUp={gatherDataHandler}
-        onMouseDown={gatherDataHandler}
-      >
-        Gather Class 1
+      <video autoPlay ref={videoRef} />
+      {!videoPlaying && (
+        <button disabled={!tfLoaded} onClick={enableCamHandler}>
+          Enable Webcam
+        </button>
+      )}
+      <button disabled={!videoPlaying} onMouseDown={() => gatherDataHandler(0)}>
+        Gather Class 1 ({examplesCount?.[0] || 0})
       </button>
-      <button
-        data-hot="1"
-        onMouseUp={gatherDataHandler}
-        onMouseDown={gatherDataHandler}
-      >
-        Gather Class 2
+      <button disabled={!videoPlaying} onMouseDown={() => gatherDataHandler(1)}>
+        Gather Class 2 ({examplesCount?.[1] || 0})
       </button>
       <button onClick={trainAndPredictHandler}>Train & Predict</button>
       <button onClick={resetHandler}>Reset</button>
