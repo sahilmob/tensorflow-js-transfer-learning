@@ -14,7 +14,7 @@ function App() {
   );
   const [result, setResult] = useState<string>("");
   const [videoPlaying, setVideoPlaying] = useState(false);
-  const [trainingDataInputs, setTrainingDataInputs] = useState([]);
+  const [trainingDataInputs, setTrainingDataInputs] = useState<tf.Tensor[]>([]);
   const [trainingDataOutputs, setTrainingDataOutputs] = useState([]);
   const [examplesCount, setExamplesCount] = useState([]);
   const [predict, setPredict] = useState(false);
@@ -185,6 +185,9 @@ function App() {
   }, [predict, predictLoop]);
 
   const resetHandler = () => {
+    for (const tensor of trainingDataInputs) {
+      tensor.dispose();
+    }
     setTrainingDataInputs([]);
     setTrainingDataOutputs([]);
     setExamplesCount([]);
