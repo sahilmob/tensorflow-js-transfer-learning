@@ -153,8 +153,6 @@ function App() {
         const heightsIndex = prediction.argMax().arraySync();
         const predictionArray = prediction.arraySync();
 
-        console.log({ heightsIndex });
-
         setResult(
           "Prediction: " +
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -186,7 +184,16 @@ function App() {
     };
   }, [predict, predictLoop]);
 
-  const resetHandler = () => {};
+  const resetHandler = () => {
+    setTrainingDataInputs([]);
+    setTrainingDataOutputs([]);
+    setExamplesCount([]);
+    setPredict(false);
+    setResult("");
+
+    window.cancelAnimationFrame(dataGatherRequestAnimationFrameRef.current!);
+    window.cancelAnimationFrame(predictRequestAnimationFrameRef.current!);
+  };
 
   const dataGatherLoop = useCallback(() => {
     if (videoPlaying && gatherDataState !== "STOP_DATA_GATHER") {
