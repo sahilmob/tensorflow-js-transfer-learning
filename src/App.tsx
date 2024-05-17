@@ -176,10 +176,18 @@ function App() {
           Enable Webcam
         </button>
       )}
-      <button disabled={!videoPlaying} onMouseDown={() => gatherDataHandler(0)}>
+      <button
+        disabled={!videoPlaying}
+        onMouseUp={() => gatherDataHandler(0)}
+        onMouseDown={() => gatherDataHandler(0)}
+      >
         Gather Class 1 ({examplesCount?.[0] || 0})
       </button>
-      <button disabled={!videoPlaying} onMouseDown={() => gatherDataHandler(1)}>
+      <button
+        disabled={!videoPlaying}
+        onMouseUp={() => gatherDataHandler(1)}
+        onMouseDown={() => gatherDataHandler(1)}
+      >
         Gather Class 2 ({examplesCount?.[1] || 0})
       </button>
       <button onClick={trainAndPredictHandler}>Train & Predict</button>
