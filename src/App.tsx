@@ -7,12 +7,12 @@ const MOBILE_NET_INPUT_WIDTH = 224;
 const MOBILE_NET_INPUT_HEIGHT = 224;
 
 function App() {
+  const [classNames] = useState(["0", "1"]);
   const [tfLoaded, setTfLoaded] = useState(false);
-  const [classNames, setClassNames] = useState(["0", "1"]);
-  const [stopDataGather, setStopDataGather] = useState(-1);
   const [gatherDataState, setGatherDataState] = useState<string | number>(
     "STOP_DATA_GATHER"
   );
+  const [result, setResult] = useState<string>("");
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [trainingDataInputs, setTrainingDataInputs] = useState([]);
   const [trainingDataOutputs, setTrainingDataOutputs] = useState([]);
@@ -21,7 +21,8 @@ function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mobilenet = useRef<tf.GraphModel | null>(null);
   const modelHead = useRef<tf.Sequential | null>(null);
-  const requestAnimationFrame = useRef<number | null>(null);
+  const dataGatherRequestAnimationFrameRef = useRef<number | null>(null);
+  const predictRequestAnimationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     async function loadModel() {
@@ -97,7 +98,93 @@ function App() {
       });
   };
 
-  const trainAndPredictHandler = () => {};
+  const trainAndPredictHandler = async () => {
+    setPredict(false);
+    tf.util.shuffleCombo(trainingDataInputs, trainingDataOutputs);
+    const outputAsTensor = tf.tensor1d(trainingDataOutputs, "int32");
+    const oneHotOutput = tf.oneHot(outputAsTensor, classNames.length);
+    const inputsAsTensor = tf.stack(trainingDataInputs);
+
+    await modelHead.current!.fit(inputsAsTensor, oneHotOutput, {
+      shuffle: true,
+      epochs: 10,
+      batchSize: 5,
+      callbacks: {
+        onEpochEnd: async (epoch, logs) => {
+          console.log(`Epoch: ${epoch}, Loss: ${logs?.loss}`);
+        },
+      },
+    });
+
+    outputAsTensor.dispose();
+    oneHotOutput.dispose();
+    inputsAsTensor.dispose();
+    setPredict(true);
+    predictRequestAnimationFrameRef.current =
+      window.requestAnimationFrame(predictLoop);
+  };
+
+  const predictLoop = useCallback(() => {
+    if (predict) {
+      tf.tidy(() => {
+        const videoFrameAsTensor = tf.browser
+          .fromPixels(videoRef.current!)
+          .div(255);
+        const resizedTensorFrame = tf.image.resizeBilinear(
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          videoFrameAsTensor,
+          [MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH],
+          true
+        );
+
+        const imageFeatures = mobilenet.current!.predict(
+          resizedTensorFrame.expandDims()
+        );
+        const prediction = modelHead
+          .current!.predict(
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            imageFeatures
+          )
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          .squeeze() as tf.Tensor;
+        const heightsIndex = prediction.argMax().arraySync();
+        const predictionArray = prediction.arraySync();
+
+        console.log({ heightsIndex });
+
+        setResult(
+          "Prediction: " +
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            classNames[heightsIndex] +
+            " with " +
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            Math.floor(predictionArray[heightsIndex] * 100) +
+            "% confidence"
+        );
+
+        predictRequestAnimationFrameRef.current =
+          window.requestAnimationFrame(predictLoop);
+      });
+    }
+  }, [predict, classNames]);
+
+  useEffect(() => {
+    if (predict) {
+      predictRequestAnimationFrameRef.current =
+        window.requestAnimationFrame(predictLoop);
+    } else {
+      window.cancelAnimationFrame(predictRequestAnimationFrameRef.current!);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(predictRequestAnimationFrameRef.current!);
+    };
+  }, [predict, predictLoop]);
 
   const resetHandler = () => {};
 
@@ -144,20 +231,20 @@ function App() {
       });
     }
 
-    requestAnimationFrame.current =
+    dataGatherRequestAnimationFrameRef.current =
       window.requestAnimationFrame(dataGatherLoop);
   }, [gatherDataState, videoPlaying, examplesCount]);
 
   useEffect(() => {
     if (typeof gatherDataState === "number") {
-      requestAnimationFrame.current =
+      dataGatherRequestAnimationFrameRef.current =
         window.requestAnimationFrame(dataGatherLoop);
     } else {
-      window.cancelAnimationFrame(requestAnimationFrame.current!);
+      window.cancelAnimationFrame(dataGatherRequestAnimationFrameRef.current!);
     }
 
     return () => {
-      window.cancelAnimationFrame(requestAnimationFrame.current!);
+      window.cancelAnimationFrame(dataGatherRequestAnimationFrameRef.current!);
     };
   }, [dataGatherLoop, gatherDataState]);
 
@@ -170,6 +257,7 @@ function App() {
   return (
     <>
       {!tfLoaded && <p>Awaiting TF.js</p>}
+      <p>{result}</p>
       <video autoPlay ref={videoRef} />
       {!videoPlaying && (
         <button disabled={!tfLoaded} onClick={enableCamHandler}>
