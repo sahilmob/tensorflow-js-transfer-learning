@@ -18,6 +18,7 @@ function App() {
   const [predict, setPredict] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const mobilenet = useRef<tf.GraphModel | null>(null);
+  const modelHead = useRef<tf.Sequential | null>(null);
 
   useEffect(() => {
     async function loadModel() {
@@ -40,7 +41,40 @@ function App() {
       }
     }
 
-    loadModel();
+    function createModelHead() {
+      modelHead.current = tf.sequential();
+      modelHead.current.add(
+        tf.layers.dense({
+          units: 128,
+          activation: "relu",
+          inputShape: [1024],
+        })
+      );
+      modelHead.current.add(
+        tf.layers.dense({
+          units: classNames.length,
+          activation: "softmax",
+        })
+      );
+
+      modelHead.current.summary();
+
+      modelHead.current.compile({
+        optimizer: tf.train.adam(),
+        loss:
+          classNames.length === 2
+            ? "binaryCrossentropy"
+            : "categoricalCrossentropy",
+        metrics: ["accuracy"],
+      });
+    }
+
+    async function run() {
+      await loadModel();
+      createModelHead();
+    }
+
+    run();
   }, []);
 
   const enableCamHandler = () => {
